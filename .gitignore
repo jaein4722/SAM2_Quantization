@@ -1,0 +1,39 @@
+.vscode/
+.DS_Store
+__pycache__/
+*-checkpoint.ipynb
+.venv
+*.egg*
+build/*
+_C.*
+outputs/*
+checkpoints/*.pt*
+demo/backend/checkpoints/*.pt
+## Checkpoints
+checkpoints/
+**/*.pt
+**/*.pth
+**/*.ckpt
+
+## Logs (entire paths)
+logs/
+**/*.log
+**/*.out
+
+## Datasets (keep top-level folders only)
+datasets/*
+!datasets/*/
+datasets/*/**
+
+## Execution results / artifacts
+outputs/
+eval_results/
+qualitative_val_outputs/
+qualitative_legacy/
+weights_dist_outputs/
+grad_dist_bce/
+sam2_logs/
+sam2_minmax/
+wandb/
+exps/
+rebuttal/
