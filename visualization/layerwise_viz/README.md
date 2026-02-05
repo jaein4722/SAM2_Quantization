@@ -30,7 +30,7 @@ python sam2/visualization/layerwise_viz/visualize_layerwise.py \
 python sam2/visualization/layerwise_viz/visualize_layerwise_quantized.py \
   --config configs/sam2/sam2_hiera_b+.yaml \
   --checkpoint <path/to/adaptive_qat_ckpt.pt> \
-  --adaptive-qat-config projects/main/adaptive_qat/configs/main_base_plus.yaml \
+  --adaptive-qat-config sam2/configs/quantization/main_base_plus.yaml \
   --image <path/to/rgb_image> \
   --points 320 240 1 \
   --output-dir sam2_logs/layerwise_debug_quant
@@ -61,7 +61,7 @@ python sam2/visualization/layerwise_viz/visualize_layerwise_quantized.py \
 ### Raw 캡처(라이트 모드)
 ```bash
 python sam2/visualization/layerwise_viz/compare_quantization.py \
-  --config-quantized projects/main/adaptive_qat/configs/main_base_plus.yaml \
+  --config-quantized sam2/configs/quantization/main_base_plus.yaml \
   --config-original configs/sam2.1/sam2.1_hiera_b+.yaml \
   --checkpoint-original checkpoints/sam2.1_hiera_base_plus.pt \
   --checkpoint-quantized <quant_ckpt> \
