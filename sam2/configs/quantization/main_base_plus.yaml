@@ -4,20 +4,20 @@ paths:
   data_root: /home/lji/SAM/datasets
   sa_v_frames: ${paths.data_root}/sa-v/sav_train/JPEGImages_24fps
   sa_v_annotations: ${paths.data_root}/sa-v/sav_train/Annotations_manual_JSON
-  sa_v_file_list: projects/main/adaptive_qat/configs/filelists/sav_train_100.txt
+  sa_v_file_list: sam2/configs/quantization/filelists/sav_train_100.txt
   sa_v_excluded_list: null
   sa_v_val_frames: ${paths.data_root}/sa-v/sav_val/JPEGImages_24fps
   sa_v_val_annotations: ${paths.data_root}/sa-v/sav_val/Annotations_6fps
-  sa_v_val_file_list: projects/main/adaptive_qat/configs/filelists/sav_val_10.txt
+  sa_v_val_file_list: sam2/configs/quantization/filelists/sav_val_10.txt
   sa_v_val_excluded_list: null
   sa1b_images: ${paths.data_root}/sa-1b_split/train
   sa1b_annotations: ${paths.data_root}/sa-1b_split/train
-  sa1b_file_list: projects/main/adaptive_qat/configs/filelists/sa1b_train_1000.txt
+  sa1b_file_list: sam2/configs/quantization/filelists/sa1b_train_1000.txt
   sa1b_excluded_list: null
-  importance_json: projects/main/adaptive_qat/configs/importance/hiera_small_importance_v2.json
+  importance_json: sam2/configs/quantization/importance/hiera_base_plus_importance_v2.json
   experiment_dir: sam2_logs/adaptive_qat_example
-  teacher_checkpoint: checkpoints/sam2.1_hiera_small.pt
-  student_checkpoint: checkpoints/sam2.1_hiera_small.pt
+  teacher_checkpoint: checkpoints/sam2.1_hiera_base_plus.pt
+  student_checkpoint: checkpoints/sam2.1_hiera_base_plus.pt
 
 scratch:
   resolution: 1024
@@ -37,11 +37,9 @@ model_base: &sam2_model
     scalp: 1
     trunk:
       _target_: sam2.modeling.backbones.hieradet.Hiera
-      embed_dim: 96
-      num_heads: 1
-      stages: [1, 2, 11, 2]
-      global_att_blocks: [7, 10, 13]
-      window_pos_embed_bkg_spatial_size: [7, 7]
+      embed_dim: 112
+      num_heads: 2
+      drop_path_rate: 0.1
     neck:
       _target_: sam2.modeling.backbones.image_encoder.FpnNeck
       position_encoding:
@@ -51,7 +49,7 @@ model_base: &sam2_model
         scale: null
         temperature: 10000
       d_model: 256
-      backbone_channel_list: [768, 384, 192, 96]
+      backbone_channel_list: [896, 448, 224, 112]
       fpn_top_down_levels: [2, 3]
       fpn_interp_model: nearest
   memory_attention:
@@ -201,7 +199,7 @@ dataset:
     multiplier: 1
 
 trainer:
-  _target_: projects.adaptive_qat.trainer.AdaptiveTrainer
+  _target_: sam2.quantization.trainer.AdaptiveTrainer
   max_epochs: ${scratch.num_epochs}
   mode: train
   accelerator: ${oc.env:ADAPTIVE_ACCELERATOR, cuda}
@@ -306,13 +304,13 @@ trainer:
       dataset_prob:
         - 1.0
   model:
-    _target_: projects.adaptive_qat.models.system.AdaptiveQATModel
+    _target_: sam2.quantization.models.system.AdaptiveQATModel
     teacher: *sam2_model
     student: *sam2_model
     teacher_checkpoint: ${paths.teacher_checkpoint}
     student_checkpoint: ${paths.student_checkpoint}
     quantization:
-      _target_: projects.adaptive_qat.models.system.AdaptiveQATQuantConfig
+      _target_: sam2.quantization.models.system.AdaptiveQATQuantConfig
       layers: null
       init_bits: 6.0
       min_bits: 2.0
@@ -337,7 +335,7 @@ trainer:
     feature_layers: null
   loss:
     all:
-      _target_: projects.adaptive_qat.losses.AdaptiveQATLoss
+      _target_: sam2.quantization.losses.AdaptiveQATLoss
       base_loss:
         _target_: training.loss_fns.MultiStepMultiMasksAndIous
         weight_dict:
@@ -367,7 +365,7 @@ trainer:
         mu_step: 5.0e-3
         warmup_ratio: 0.2
     val:
-      _target_: projects.adaptive_qat.losses.AdaptiveQATLoss
+      _target_: sam2.quantization.losses.AdaptiveQATLoss
       base_loss:
         _target_: training.loss_fns.MultiStepMultiMasksAndIous
         weight_dict:

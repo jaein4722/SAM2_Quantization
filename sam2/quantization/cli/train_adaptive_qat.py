@@ -10,7 +10,7 @@ from pathlib import Path
 
 from omegaconf import OmegaConf
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.append(str(REPO_ROOT))
 
@@ -18,7 +18,7 @@ from training.train import add_pythonpath_to_sys_path, single_node_runner  # noq
 from training.utils.train_utils import makedir, register_omegaconf_resolvers  # noqa: E402
 
 
-DEFAULT_CONFIG = "projects/main/adaptive_qat/configs/adaptive_qat_template.yaml"
+DEFAULT_CONFIG = "sam2/configs/quantization/adaptive_qat_template.yaml"
 
 def _resolve_experiment_dir(cfg, override: str | None) -> str:
     if override:

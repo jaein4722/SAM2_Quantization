@@ -4,17 +4,13 @@ paths:
   data_root: /home/lji/SAM/datasets
   sa_v_frames: ${paths.data_root}/sa-v/sav_train/JPEGImages_24fps
   sa_v_annotations: ${paths.data_root}/sa-v/sav_train/Annotations_manual_JSON
-  sa_v_file_list: projects/main/adaptive_qat/configs/filelists/sav_train_100.txt
+  sa_v_file_list: null
   sa_v_excluded_list: null
-  sa_v_val_frames: ${paths.data_root}/sa-v/sav_val/JPEGImages_24fps
-  sa_v_val_annotations: ${paths.data_root}/sa-v/sav_val/Annotations_6fps
-  sa_v_val_file_list: projects/main/adaptive_qat/configs/filelists/sav_val_10.txt
-  sa_v_val_excluded_list: null
   sa1b_images: ${paths.data_root}/sa-1b_split/train
   sa1b_annotations: ${paths.data_root}/sa-1b_split/train
-  sa1b_file_list: projects/main/adaptive_qat/configs/filelists/sa1b_train_1000.txt
+  sa1b_file_list: null
   sa1b_excluded_list: null
-  importance_json: projects/main/adaptive_qat/configs/importance/hiera_base_plus_importance_v2.json
+  importance_json: sam2/configs/quantization/importance/hiera_base_plus_importance.json
   experiment_dir: sam2_logs/adaptive_qat_example
   teacher_checkpoint: checkpoints/sam2.1_hiera_base_plus.pt
   student_checkpoint: checkpoints/sam2.1_hiera_base_plus.pt
@@ -26,10 +22,11 @@ scratch:
   num_frames: 4
   max_num_objects: 3
   phases_per_epoch: 1
-  num_epochs: 1
+  num_epochs: 20
   base_lr: 5.0e-6
   vision_lr: 3.0e-6
-  bit_controller_lr: 1.0e-2
+  bit_controller_lr: 1.0e-3
+
 model_base: &sam2_model
   _target_: training.model.sam2.SAM2Train
   image_encoder:
@@ -173,17 +170,6 @@ vos:
         - _target_: training.dataset.transforms.NormalizeAPI
           mean: [0.485, 0.456, 0.406]
           std: [0.229, 0.224, 0.225]
-  val_transforms:
-    - _target_: training.dataset.transforms.ComposeAPI
-      transforms:
-        - _target_: training.dataset.transforms.RandomResizeAPI
-          sizes: ${scratch.resolution}
-          square: true
-          consistent_transform: true
-        - _target_: training.dataset.transforms.ToTensorAPI
-        - _target_: training.dataset.transforms.NormalizeAPI
-          mean: [0.485, 0.456, 0.406]
-          std: [0.229, 0.224, 0.225]
 
 dataset:
   sa_v:
@@ -199,12 +185,11 @@ dataset:
     multiplier: 1
 
 trainer:
-  _target_: projects.adaptive_qat.trainer.AdaptiveTrainer
+  _target_: sam2.quantization.trainer.AdaptiveTrainer
   max_epochs: ${scratch.num_epochs}
   mode: train
   accelerator: ${oc.env:ADAPTIVE_ACCELERATOR, cuda}
   seed_value: 123
-  mid_epoch_val_fractions: []
   distributed:
     backend: ${oc.env:ADAPTIVE_DIST_BACKEND, nccl}
     find_unused_parameters: true
@@ -272,45 +257,15 @@ trainer:
       dataset_prob:
         - 0.5
         - 0.5
-    val:
-      _target_: training.dataset.sam2_datasets.TorchTrainMixedDataset
-      datasets:
-        - _target_: training.dataset.vos_dataset.VOSDataset
-          transforms: ${vos.val_transforms}
-          training: false
-          multiplier: 1
-          video_dataset:
-            _target_: training.dataset.vos_raw_dataset.PNGRawDataset
-            img_folder: ${paths.sa_v_val_frames}
-            gt_folder: ${paths.sa_v_val_annotations}
-            file_list_txt: ${paths.sa_v_val_file_list}
-            excluded_videos_list_txt: ${paths.sa_v_val_excluded_list}
-            is_palette: false
-          sampler:
-            _target_: training.dataset.vos_sampler.EvalSampler
-            max_frames: ${scratch.num_frames}
-            frame_stride: 1
-      batch_sizes:
-        - 1
-      num_workers: 2
-      shuffle: false
-      pin_memory: true
-      drop_last: false
-      collate_fn:
-        _target_: training.utils.data_utils.collate_fn
-        _partial_: true
-        dict_key: val
-      phases_per_epoch: 1
-      dataset_prob:
-        - 1.0
+    val: null
   model:
-    _target_: projects.adaptive_qat.models.system.AdaptiveQATModel
+    _target_: sam2.quantization.models.system.AdaptiveQATModel
     teacher: *sam2_model
     student: *sam2_model
     teacher_checkpoint: ${paths.teacher_checkpoint}
     student_checkpoint: ${paths.student_checkpoint}
     quantization:
-      _target_: projects.adaptive_qat.models.system.AdaptiveQATQuantConfig
+      _target_: sam2.quantization.models.system.AdaptiveQATQuantConfig
       layers: null
       init_bits: 6.0
       min_bits: 2.0
@@ -329,13 +284,12 @@ trainer:
         qdrop_p: 0.15
       checkpoint_modules:
         - "image_encoder.trunk"
-        - "sam_mask_decoder.output_upscaling"
         - "sam_mask_decoder.transformer"
       checkpoint_use_reentrant: false
     feature_layers: null
   loss:
     all:
-      _target_: projects.adaptive_qat.losses.AdaptiveQATLoss
+      _target_: sam2.quantization.losses.AdaptiveQATLoss
       base_loss:
         _target_: training.loss_fns.MultiStepMultiMasksAndIous
         weight_dict:
@@ -352,46 +306,21 @@ trainer:
       importance_path: ${paths.importance_json}
       kd_temperature: 1.0
       base_weight: 1.0
-      layer_kd_weight: 0.0
-      bit_penalty_weight: 0.0
-      output_kd_weight: 0.0
+      layer_kd_weight: 1.0
+      bit_penalty_weight: 1.0
+      output_kd_weight: 1.0
       alpha: 1.8
       eps: 1.0e-3
       budget:
-        enabled: false
+        enabled: true
         target_avg_w_bits: 3.0
         warm_target: 3.3
         mu_init: 0.0
         mu_step: 5.0e-3
         warmup_ratio: 0.2
-    val:
-      _target_: projects.adaptive_qat.losses.AdaptiveQATLoss
-      base_loss:
-        _target_: training.loss_fns.MultiStepMultiMasksAndIous
-        weight_dict:
-          loss_mask: 20
-          loss_dice: 1
-          loss_iou: 1
-          loss_class: 1
-        supervise_all_iou: true
-        iou_use_l1_loss: true
-        pred_obj_scores: true
-        focal_gamma_obj_score: 0.0
-        focal_alpha_obj_score: -1.0
-      layer_names: null
-      importance_path: ${paths.importance_json}
-      kd_temperature: 1.0
-      base_weight: 1.0
-      layer_kd_weight: 0.0
-      bit_penalty_weight: 0.0
-      output_kd_weight: 0.0
-      alpha: 1.8
-      eps: 1.0e-3
-      budget:
-        enabled: false
   optim:
     amp:
-      enabled: false
+      enabled: true
       amp_dtype: bfloat16
 
     optimizer:
@@ -440,14 +369,7 @@ trainer:
     log_dir: ${paths.experiment_dir}/logs
     log_freq: 50
     tensorboard_writer: null
-    wandb:
-      project: adaptive_qat
-      mode: ${oc.env:WANDB_MODE, online}
-      name: adaptive_qat_toy
-      config:
-        experiment_dir: ${paths.experiment_dir}
-        sa_v_file_list: ${paths.sa_v_file_list}
-        sa1b_file_list: ${paths.sa1b_file_list}
+    wandb: null
 
 launcher:
   num_nodes: 1

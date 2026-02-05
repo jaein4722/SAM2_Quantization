@@ -21,7 +21,7 @@ from visualization.interactive_viz.render import normalize_map, to_heatmap
 from visualization.interactive_viz.io import infer_token_grid
 
 # Default Paths
-DEFAULT_QUANT_CONFIG = "projects/main/adaptive_qat/configs/main_base_plus.yaml"
+DEFAULT_QUANT_CONFIG = "sam2/configs/quantization/main_base_plus.yaml"
 DEFAULT_ORIG_CONFIG = "configs/sam2.1/sam2.1_hiera_b+.yaml"
 DEFAULT_ORIG_CHECKPOINT = "checkpoints/sam2.1_hiera_base_plus.pt"
 # Updated default path based on user history
