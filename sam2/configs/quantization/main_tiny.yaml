@@ -1,7 +1,7 @@
 # Adaptive QAT training template.
 
 paths:
-  data_root: /home/lji/SAM/datasets
+  data_root: data
   sa_v_frames: ${paths.data_root}/sa-v/sav_train/JPEGImages_24fps
   sa_v_annotations: ${paths.data_root}/sa-v/sav_train/Annotations_manual_JSON
   sa_v_file_list: sam2/configs/quantization/filelists/sav_train_100.txt
@@ -199,6 +199,13 @@ dataset:
     mask_area_frac_thresh: 0.01
     uncertain_iou: -1
     multiplier: 1
+    storage_mode: file
+    wds_manifest: null
+    wds_cache_dir: null
+    wds_cache_size_gb: null
+    wds_prefetch: null
+    wds_image_keys: [".jpg", ".png", "jpg", "png"]
+    wds_json_keys: [".json", "json"]
 
 trainer:
   _target_: sam2.quantization.trainer.AdaptiveTrainer
@@ -254,6 +261,13 @@ trainer:
               num_frames: ${dataset.sa1b.num_frames}
               mask_area_frac_thresh: ${dataset.sa1b.mask_area_frac_thresh}
               uncertain_iou: ${dataset.sa1b.uncertain_iou}
+              storage_mode: ${dataset.sa1b.storage_mode}
+              wds_manifest: ${dataset.sa1b.wds_manifest}
+              wds_cache_dir: ${dataset.sa1b.wds_cache_dir}
+              wds_cache_size_gb: ${dataset.sa1b.wds_cache_size_gb}
+              wds_prefetch: ${dataset.sa1b.wds_prefetch}
+              wds_image_keys: ${dataset.sa1b.wds_image_keys}
+              wds_json_keys: ${dataset.sa1b.wds_json_keys}
             sampler:
               _target_: training.dataset.vos_sampler.RandomUniformSampler
               num_frames: ${scratch.num_frames}

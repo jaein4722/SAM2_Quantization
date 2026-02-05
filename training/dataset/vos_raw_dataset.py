@@ -5,15 +5,19 @@
 # LICENSE file in the root directory of this source tree.
 
 import glob
+import inspect
+import io
 import logging
 import os
 from dataclasses import dataclass
 
 from typing import List, Optional
 
+import numpy as np
 import pandas as pd
 
 import torch
+from PIL import Image as PILImage
 
 from iopath.common.file_io import g_pathmgr
 
@@ -145,6 +149,45 @@ class PNGRawDataset(VOSRawDataset):
         return len(self.video_names)
 
 
+def _build_wds_dataset(manifest, cache_dir=None, cache_size_gb=None, prefetch=None):
+    try:
+        import wids as wds_index
+    except Exception as e:
+        raise ImportError(
+            "WebDataset(wds) support requires the WebDataset index package."
+        ) from e
+
+    kwargs = {}
+    signature = inspect.signature(wds_index.ShardListDataset)
+    if cache_dir is not None and "cache_dir" in signature.parameters:
+        kwargs["cache_dir"] = cache_dir
+    if cache_size_gb is not None and "cache_size" in signature.parameters:
+        kwargs["cache_size"] = int(cache_size_gb * 1024 * 1024 * 1024)
+    if prefetch is not None and "prefetch" in signature.parameters:
+        kwargs["prefetch"] = prefetch
+    return wds_index.ShardListDataset(manifest, **kwargs)
+
+
+def _select_sample_bytes(sample, keys):
+    for key in keys:
+        if key in sample:
+            return sample[key]
+    raise KeyError(f"Missing keys {keys} in sample: {list(sample.keys())}")
+
+
+def _get_sample_key(sample, fallback):
+    for key in ("__key__", "key"):
+        if key in sample:
+            return sample[key]
+    return fallback
+
+
+def _decode_image_bytes_to_tensor(image_bytes):
+    image = PILImage.open(io.BytesIO(image_bytes)).convert("RGB")
+    image_np = np.asarray(image, dtype=np.uint8)
+    return torch.from_numpy(image_np).permute(2, 0, 1).float() / 255.0
+
+
 class SA1BRawDataset(VOSRawDataset):
     def __init__(
         self,
@@ -155,12 +198,43 @@ class SA1BRawDataset(VOSRawDataset):
         num_frames=1,
         mask_area_frac_thresh=1.1,  # no filtering by default
         uncertain_iou=-1,  # no filtering by default
+        storage_mode="file",
+        wds_manifest=None,
+        wds_cache_dir=None,
+        wds_cache_size_gb=None,
+        wds_prefetch=None,
+        wds_image_keys=None,
+        wds_json_keys=None,
     ):
+        self.storage_mode = storage_mode
         self.img_folder = img_folder
         self.gt_folder = gt_folder
         self.num_frames = num_frames
         self.mask_area_frac_thresh = mask_area_frac_thresh
         self.uncertain_iou = uncertain_iou  # stability score
+
+        self.wds_manifest = wds_manifest
+        self.wds_cache_dir = wds_cache_dir
+        self.wds_cache_size_gb = wds_cache_size_gb
+        self.wds_prefetch = wds_prefetch
+        self.wds_image_keys = wds_image_keys or [".jpg", ".png", "jpg", "png"]
+        self.wds_json_keys = wds_json_keys or [".json", "json"]
+
+        if self.storage_mode == "wds":
+            if self.wds_manifest is None:
+                raise ValueError("wds_manifest is required when storage_mode='wds'")
+            if file_list_txt is not None or excluded_videos_list_txt is not None:
+                logging.warning(
+                    "file_list_txt/excluded_videos_list_txt are not supported in wds mode yet."
+                )
+            self._wds_dataset = _build_wds_dataset(
+                self.wds_manifest,
+                cache_dir=self.wds_cache_dir,
+                cache_size_gb=self.wds_cache_size_gb,
+                prefetch=self.wds_prefetch,
+            )
+            self.video_names = None
+            return
 
         # Read the subset defined in file_list_txt
         if file_list_txt is not None:
@@ -188,6 +262,34 @@ class SA1BRawDataset(VOSRawDataset):
         """
         Given a VOSVideo object, return the mask tensors.
         """
+        if self.storage_mode == "wds":
+            sample = self._wds_dataset[idx]
+            sample_key = _get_sample_key(sample, fallback=str(idx))
+            image_bytes = _select_sample_bytes(sample, self.wds_image_keys)
+            json_bytes = _select_sample_bytes(sample, self.wds_json_keys)
+
+            image_tensor = _decode_image_bytes_to_tensor(image_bytes)
+
+            segment_loader = SA1BSegmentLoader(
+                json_bytes,
+                mask_area_frac_thresh=self.mask_area_frac_thresh,
+                video_frame_source=image_bytes,
+                uncertain_iou=self.uncertain_iou,
+            )
+
+            frames = [
+                VOSFrame(frame_idx, image_path=None, data=image_tensor)
+                for frame_idx in range(self.num_frames)
+            ]
+
+            try:
+                video_id = int(str(sample_key).split("_")[-1])
+            except ValueError:
+                video_id = int(idx)
+            video_name = str(sample_key).split("_")[-1]
+            video = VOSVideo(video_name, video_id, frames)
+            return video, segment_loader
+
         video_name = self.video_names[idx]
 
         video_frame_path = os.path.join(self.img_folder, video_name + ".jpg")
@@ -209,6 +311,8 @@ class SA1BRawDataset(VOSRawDataset):
         return video, segment_loader
 
     def __len__(self):
+        if self.storage_mode == "wds":
+            return len(self._wds_dataset)
         return len(self.video_names)
 
 
@@ -216,6 +320,7 @@ class JSONRawDataset(VOSRawDataset):
     """
     Dataset where the annotation in the format of SA-V json files
     """
+    # TODO: WebDataset(wds) 전환은 비디오 단위 샤딩/메타데이터 확정 후에 추가.
 
     def __init__(
         self,

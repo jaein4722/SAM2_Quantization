@@ -24,6 +24,7 @@ logs/
 datasets/*
 !datasets/*/
 datasets/*/**
+data/
 
 ## Execution results / artifacts
 outputs/

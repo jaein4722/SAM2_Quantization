@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import glob
+import io
 import json
 import os
 
@@ -18,6 +19,27 @@ try:
     from pycocotools import mask as mask_utils
 except:
     pass
+
+
+class DataIngestor:
+    @staticmethod
+    def load_json(source):
+        if isinstance(source, (bytes, bytearray, memoryview)):
+            return json.loads(bytes(source).decode("utf-8"))
+        if isinstance(source, str):
+            with open(source, "r") as f:
+                return json.load(f)
+        if isinstance(source, (list, dict)):
+            return source
+        raise TypeError(f"Unsupported json source type: {type(source)}")
+
+    @staticmethod
+    def load_image(source):
+        if isinstance(source, (bytes, bytearray, memoryview)):
+            return PILImage.open(io.BytesIO(bytes(source))).convert("RGB")
+        if isinstance(source, str):
+            return PILImage.open(source).convert("RGB")
+        raise TypeError(f"Unsupported image source type: {type(source)}")
 
 
 class JSONSegmentLoader:
@@ -264,14 +286,21 @@ class SA1BSegmentLoader:
         video_mask_path,
         mask_area_frac_thresh=1.1,
         video_frame_path=None,
+        video_frame_source=None,
         uncertain_iou=-1,
     ):
-        with open(video_mask_path, "r") as f:
-            self.frame_annots = json.load(f)
+        video_mask_source = video_mask_path
+        if video_frame_source is None:
+            video_frame_source = video_frame_path
+        self.frame_annots = DataIngestor.load_json(video_mask_source)
 
         if mask_area_frac_thresh <= 1.0:
+            if video_frame_source is None:
+                raise ValueError(
+                    "video_frame_source is required when mask_area_frac_thresh <= 1.0"
+                )
             # Lazily read frame
-            orig_w, orig_h = PILImage.open(video_frame_path).size
+            orig_w, orig_h = DataIngestor.load_image(video_frame_source).size
             area = orig_w * orig_h
 
         self.frame_annots = self.frame_annots["annotations"]

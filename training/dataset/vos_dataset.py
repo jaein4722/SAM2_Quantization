@@ -4,6 +4,7 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
+import io
 import logging
 import random
 from copy import deepcopy
@@ -151,7 +152,12 @@ def load_images(frames):
         else:
             # The frame rgb data has already been loaded
             # Convert it to a PILImage
-            all_images.append(tensor_2_PIL(frame.data))
+            if isinstance(frame.data, (bytes, bytearray, memoryview)):
+                all_images.append(
+                    PILImage.open(io.BytesIO(bytes(frame.data))).convert("RGB")
+                )
+            else:
+                all_images.append(tensor_2_PIL(frame.data))
 
     return all_images
 

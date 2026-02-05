@@ -1,7 +1,7 @@
 # Min-max QAT baseline that mirrors the toy adaptive setting (1 epoch, 1k images, 10 videos).
 
 paths:
-  data_root: /home/lji/SAM/datasets
+  data_root: data
   sa_v_frames: ${paths.data_root}/sa-v/sav_train/JPEGImages_24fps
   sa_v_annotations: ${paths.data_root}/sa-v/sav_train/Annotations_manual_JSON
   sa_v_file_list: projects/main/adaptive_qat/configs/filelists/sav_train_10.txt
