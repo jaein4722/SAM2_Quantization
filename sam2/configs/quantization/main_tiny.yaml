@@ -457,7 +457,7 @@ trainer:
     log_freq: 50
     tensorboard_writer: null
     wandb:
-      project: adaptive_qat
+      project: SAM2_Quantization
       mode: ${oc.env:WANDB_MODE, online}
       name: adaptive_qat_toy
       config:
