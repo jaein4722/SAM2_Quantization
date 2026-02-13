@@ -90,6 +90,7 @@ class AdaptiveQATQuantConfig:
     smoothing_end_ratio: float = 0.0
     smoothing_importance_scale: bool = False
     act: Optional[Mapping[str, object]] = None
+    weight: Optional[Mapping[str, object]] = None
     checkpoint_modules: Optional[Iterable[str]] = None
     checkpoint_use_reentrant: bool = False
 
@@ -260,6 +261,7 @@ class AdaptiveQATModel(nn.Module):
             bit_controller,
             allow_bit_grad=quantization.allow_bit_grad,
             act_config=quantization.act,
+            weight_config=quantization.weight,
         )
         self.student_features = FeatureCatcher(student_modules)
         self.teacher_features = FeatureCatcher(teacher_modules)

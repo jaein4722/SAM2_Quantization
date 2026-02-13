@@ -169,6 +169,20 @@ class ActivationQuantConfig:
 
 
 @dataclass
+class WeightQuantConfig:
+    enabled: bool = False
+    qdrop_p: float = 0.0
+
+    @classmethod
+    def from_mapping(cls, config: Optional[Mapping[str, object]]) -> "WeightQuantConfig":
+        if config is None:
+            return cls()
+        valid = {field.name for field in fields(cls)}
+        filtered = {k: config[k] for k in config if k in valid}
+        return cls(**filtered)
+
+
+@dataclass
 class _LayerState:
     bit_param: nn.Parameter
     ema_index: int
@@ -184,6 +198,7 @@ class ActivationQuantizer(nn.Module):
         allow_bit_grad: bool = True,
         bit_grad_clip: float = 1.0,
         act_config: Optional[Mapping[str, object]] = None,
+        weight_config: Optional[Mapping[str, object]] = None,
     ) -> None:
         super().__init__()
         self._handles: List[torch.utils.hooks.RemovableHandle] = []
@@ -193,6 +208,7 @@ class ActivationQuantizer(nn.Module):
         self._states: Dict[str, _LayerState] = {}
         self._stats: Dict[str, Dict[str, float]] = {}
         self._act = ActivationQuantConfig.from_mapping(act_config)
+        self._weight = WeightQuantConfig.from_mapping(weight_config)
 
         module_names = list(modules.keys())
         self.register_buffer(
@@ -218,6 +234,10 @@ class ActivationQuantizer(nn.Module):
             self._states[name] = _LayerState(bit_param=bit_param, ema_index=idx, pact_key=pact_key)
             handle = modules[name].register_forward_hook(self._make_hook(name))
             self._handles.append(handle)
+            if self._weight.enabled and isinstance(modules[name], (nn.Conv1d, nn.Conv2d, nn.Conv3d, nn.Linear)):
+                pre = modules[name].register_forward_pre_hook(self._make_weight_pre_hook(name))
+                post = modules[name].register_forward_hook(self._make_weight_post_hook(name))
+                self._handles.extend([pre, post])
 
     @staticmethod
     def _sanitize_name(name: str) -> str:
@@ -231,6 +251,48 @@ class ActivationQuantizer(nn.Module):
             return self._quantize_output(output, bit_value, state, module.training, name)
 
         return _hook
+
+    def _make_weight_pre_hook(self, name: str):
+        state = self._states[name]
+
+        def _pre_hook(module, inputs):
+            if not hasattr(module, "weight") or module.weight is None:
+                return
+            if hasattr(module, "_qat_weight_backup"):
+                return
+            bit_value = self._controller.sanitize(state.bit_param)
+            if self._weight.qdrop_p > 0.0 and module.training:
+                if torch.rand(1, device=bit_value.device).item() < self._weight.qdrop_p:
+                    return
+            weight = module.weight
+            if not torch.is_floating_point(weight) or weight.numel() == 0:
+                return
+            max_val = weight.detach().abs().amax()
+            if not torch.isfinite(max_val):
+                return
+            max_val = torch.clamp(max_val, min=1e-6)
+            max_tensor = torch.as_tensor(max_val, dtype=bit_value.dtype, device=bit_value.device)
+            weight_q = fake_quantize(
+                weight,
+                bit_value,
+                max_tensor,
+                allow_bit_grad=self._allow_bit_grad,
+                grad_clip=self._bit_grad_clip,
+            )
+            module._qat_weight_backup = weight
+            module.weight = weight_q
+
+        return _pre_hook
+
+    @staticmethod
+    def _make_weight_post_hook(name: str):
+        def _post_hook(module, inputs, output):
+            if hasattr(module, "_qat_weight_backup"):
+                module.weight = module._qat_weight_backup
+                delattr(module, "_qat_weight_backup")
+            return output
+
+        return _post_hook
 
     def _quantize_output(
         self,

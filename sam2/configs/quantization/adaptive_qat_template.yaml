@@ -296,6 +296,9 @@ trainer:
         ema_decay: 0.95
         pact: true
         qdrop_p: 0.15
+      weight:
+        enabled: true
+        qdrop_p: 0.0
       checkpoint_modules:
         - "image_encoder.trunk"
         - "sam_mask_decoder.transformer"
